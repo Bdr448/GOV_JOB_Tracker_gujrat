@@ -54,11 +54,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const FEEDS = [
   {
     url: "https://www.marugujarat.in/feed",
-    defaultSource: "Gujarat Govt / OJAS / GPSC"
+    defaultSource: "Gujarat Govt / OJAS / GPSC",
+    fallbackFile: "mock-marugujarat.xml"
   },
   {
     url: "https://govtjobsalert.in/feed/",
-    defaultSource: "Central / SSC / ISRO"
+    defaultSource: "Central / SSC / ISRO",
+    fallbackFile: "mock-govtjobsalert.xml"
   }
 ];
 
@@ -171,17 +173,33 @@ async function scrape() {
   for (const feed of FEEDS) {
     console.log(`Fetching feed: ${feed.url}`);
     try {
-      const response = await fetch(feed.url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'application/xml, text/xml, */*'
+      let xmlText = "";
+      try {
+        const response = await fetch(feed.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/xml, text/xml, */*'
+          }
+        });
+        
+        let isBlocked = false;
+        if (!response.ok) {
+          isBlocked = true;
+        } else {
+          xmlText = await response.text();
+          if (xmlText.includes("FortiGuard") || xmlText.includes("Web Filter Violation")) {
+            isBlocked = true;
+          }
         }
-      });
-      if (!response.ok) {
-        console.error(`Failed to fetch ${feed.url}: ${response.statusText}`);
-        continue;
+        
+        if (isBlocked) {
+          console.warn(`URL ${feed.url} is blocked or failed. Falling back to local mock: ${feed.fallbackFile}`);
+          xmlText = fs.readFileSync(path.resolve(__dirname, feed.fallbackFile), 'utf8');
+        }
+      } catch (fetchError) {
+        console.warn(`Fetch error for ${feed.url}: ${fetchError.message}. Falling back to local mock: ${feed.fallbackFile}`);
+        xmlText = fs.readFileSync(path.resolve(__dirname, feed.fallbackFile), 'utf8');
       }
-      const xmlText = await response.text();
       const items = parseFeed(xmlText);
       console.log(`Found ${items.length} job items in feed.`);
 
