@@ -169,6 +169,7 @@ function parseFeed(xml) {
 async function scrape() {
   console.log("Starting Live Job Scraper...");
   let newJobsCount = 0;
+  const insertedJobs = [];
 
   for (const feed of FEEDS) {
     console.log(`Fetching feed: ${feed.url}`);
@@ -245,6 +246,15 @@ async function scrape() {
         } else {
           console.log(`Successfully added job: "${item.title}"`);
           newJobsCount++;
+          insertedJobs.push({
+            title: item.title,
+            department: department,
+            category: category,
+            eligibility: eligibility,
+            apply_url: item.link,
+            last_date: lastDate,
+            tags: tags
+          });
         }
       }
     } catch (e) {
@@ -253,6 +263,115 @@ async function scrape() {
   }
 
   console.log(`Daily sync finished. Added ${newJobsCount} new job notifications.`);
+  if (insertedJobs.length > 0) {
+    await sendEmailAlerts(insertedJobs);
+  }
+}
+
+async function sendEmailAlerts(newJobs) {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_API_KEY) {
+    console.log("RESEND_API_KEY not configured. Skipping daily email alerts.");
+    return;
+  }
+
+  console.log("Fetching email subscribers...");
+  const { data: subscribers, error } = await supabase
+    .from('email_subscriptions')
+    .select('*')
+    .eq('active', true);
+
+  if (error) {
+    console.error("Error fetching email subscriptions:", error.message);
+    return;
+  }
+
+  if (!subscribers || subscribers.length === 0) {
+    console.log("No active email subscriptions found.");
+    return;
+  }
+
+  console.log(`Sending email alerts to ${subscribers.length} subscribers...`);
+
+  for (const sub of subscribers) {
+    // Filter jobs matching subscriber categories (if categories is empty, send all)
+    const matchingJobs = newJobs.filter(job => {
+      if (!sub.categories || sub.categories.length === 0) return true;
+      return sub.categories.includes(job.category);
+    });
+
+    if (matchingJobs.length === 0) {
+      console.log(`No matching jobs for subscriber: ${sub.email}`);
+      continue;
+    }
+
+    // Build premium email body
+    let jobsListHtml = '';
+    for (const job of matchingJobs) {
+      const tagsBadges = job.tags.map(t => `<span style="background:#2dd4bf;color:#0f172a;padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px;font-weight:600;">${t}</span>`).join('');
+      jobsListHtml += `
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;margin-bottom:16px;color:#f8fafc;font-family:sans-serif;">
+          <div style="margin-bottom:8px;">
+            <span style="background:rgba(45,212,191,0.15);color:#2dd4bf;border:1px solid rgba(45,212,191,0.3);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${job.category}</span>
+          </div>
+          <h3 style="margin:0 0 8px 0;font-size:18px;color:#f8fafc;">${job.title}</h3>
+          <p style="margin:0 0 12px 0;font-size:14px;color:#94a3b8;">🏢 ${job.department}</p>
+          <p style="margin:0 0 12px 0;font-size:14px;color:#cbd5e1;"><strong>Eligibility:</strong> ${job.eligibility}</p>
+          <div style="margin-bottom:16px;">
+            ${tagsBadges}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:between;border-top:1px solid #334155;padding-top:12px;margin-top:12px;">
+            <span style="font-size:12px;color:#f43f5e;font-weight:500;">📅 Last Date: ${job.last_date}</span>
+            <a href="${job.apply_url}" target="_blank" style="background:#2dd4bf;color:#0f172a;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;margin-left:auto;">Apply Now</a>
+          </div>
+        </div>
+      `;
+    }
+
+    const emailHtml = `
+      <div style="background:#0f172a;padding:30px 20px;min-height:100%;font-family:sans-serif;color:#f8fafc;">
+        <div style="max-width:600px;margin:0 auto;">
+          <div style="text-align:center;margin-bottom:24px;">
+            <div style="display:inline-block;background:#2dd4bf;color:#0f172a;padding:8px 16px;border-radius:8px;font-weight:bold;font-size:20px;box-shadow:0 4px 12px rgba(45,212,191,0.3);">GovTech Alerts</div>
+            <h1 style="margin:16px 0 8px 0;font-size:24px;color:#f8fafc;">New Job Opportunities for You!</h1>
+            <p style="margin:0;color:#94a3b8;font-size:14px;">Daily tracking updates for SSC, Gujarat Govt, ISRO & Engineering Exams</p>
+          </div>
+          
+          ${jobsListHtml}
+          
+          <div style="text-align:center;margin-top:30px;font-size:12px;color:#64748b;border-top:1px solid #1e293b;padding-top:20px;">
+            <p>You received this email because you subscribed to GovTech Alerts.</p>
+            <p><a href="https://gov-tjob-guardian-pulse.pages.dev/dashboard/alerts" style="color:#2dd4bf;text-decoration:none;">Manage Subscriptions</a></p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'GovTech Alerts <onboarding@resend.dev>',
+          to: sub.email,
+          subject: `🔔 GovTech Alerts: ${matchingJobs.length} New Job Openings Found!`,
+          html: emailHtml
+        })
+      });
+
+      if (response.ok) {
+        console.log(`Email alert sent successfully to ${sub.email}`);
+      } else {
+        const resText = await response.text();
+        console.error(`Failed to send email to ${sub.email}: ${response.statusText} - ${resText}`);
+      }
+    } catch (sendError) {
+      console.error(`Error sending email to ${sub.email}:`, sendError.message);
+    }
+  }
 }
 
 scrape().catch(console.error);
