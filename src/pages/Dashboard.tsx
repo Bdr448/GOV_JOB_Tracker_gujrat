@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Job, CATEGORIES } from "@/lib/types";
-import { Search, Inbox } from "lucide-react";
+import { Search, Inbox, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +73,38 @@ const Dashboard = ({ mode = "all" }: Props) => {
         <div className="mb-8 animate-fade-in-up">
           <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">{title}</h1>
           <p className="text-muted-foreground">{subtitle}</p>
+        </div>
+
+        {/* Quick Access Portals */}
+        <div className="mb-8 animate-fade-in-up">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Direct Apply Portals</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              { name: "OJAS Gujarat", url: "https://ojas.gujarat.gov.in/", desc: "Gujarat Apply Portal", icon: "🏢", color: "hover:border-rose-500/40 hover:shadow-rose-500/10" },
+              { name: "Maru Gujarat", url: "https://www.marugujarat.in/", desc: "Job Updates & Exams", icon: "📰", color: "hover:border-amber-500/40 hover:shadow-amber-500/10" },
+              { name: "GPSC Portal", url: "https://gpsc-ojas.gujarat.gov.in/", desc: "Class 1 & 2 Exams", icon: "🏛️", color: "hover:border-blue-500/40 hover:shadow-blue-500/10" },
+              { name: "SSC Official", url: "https://ssc.gov.in/", desc: "Central Staff Selection", icon: "🎖️", color: "hover:border-emerald-500/40 hover:shadow-emerald-500/10" },
+              { name: "ISRO Careers", url: "https://www.isro.gov.in/Careers.html", desc: "Space & Tech Jobs", icon: "🚀", color: "hover:border-cyan-500/40 hover:shadow-cyan-500/10" },
+            ].map((p) => (
+              <a
+                key={p.name}
+                href={p.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "glass p-3.5 rounded-xl hover:-translate-y-0.5 transition-all duration-300 flex flex-col items-start gap-1 group border border-border/50",
+                  p.color
+                )}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xl">{p.icon}</span>
+                  <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                <span className="font-semibold text-sm mt-1">{p.name}</span>
+                <span className="text-[10px] text-muted-foreground">{p.desc}</span>
+              </a>
+            ))}
+          </div>
         </div>
 
         <div className="glass rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-3 sticky top-16 z-20">
