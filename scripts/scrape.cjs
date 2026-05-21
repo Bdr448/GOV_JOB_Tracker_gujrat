@@ -1,5 +1,39 @@
 const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+// Disable SSL certificate rejection for public feed fetching issues
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+// Custom .env parser to avoid requiring 'dotenv' dependency
+function loadEnv() {
+  try {
+    const envPath = path.resolve(__dirname, '../.env');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      envContent.split(/\r?\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        const index = trimmed.indexOf('=');
+        if (index !== -1) {
+          const key = trimmed.substring(0, index).trim();
+          let value = trimmed.substring(index + 1).trim();
+          if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.substring(1, value.length - 1);
+          } else if (value.startsWith("'") && value.endsWith("'")) {
+            value = value.substring(1, value.length - 1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = value;
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Could not read .env file, relying on environment variables:", err.message);
+  }
+}
+loadEnv();
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -8,6 +42,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.");
   process.exit(1);
 }
+
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
@@ -136,7 +171,12 @@ async function scrape() {
   for (const feed of FEEDS) {
     console.log(`Fetching feed: ${feed.url}`);
     try {
-      const response = await fetch(feed.url);
+      const response = await fetch(feed.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'application/xml, text/xml, */*'
+        }
+      });
       if (!response.ok) {
         console.error(`Failed to fetch ${feed.url}: ${response.statusText}`);
         continue;
